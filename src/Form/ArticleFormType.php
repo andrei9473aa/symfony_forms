@@ -9,6 +9,9 @@ use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
+use Symfony\Component\Form\FormEvent;
+use Symfony\Component\Form\FormEvents;
+use Symfony\Component\Form\FormInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
 class ArticleFormType extends AbstractType
@@ -26,7 +29,6 @@ class ArticleFormType extends AbstractType
         /** @var Article $article */
         $article = $options['data'] ?? null;
         $isEdit = $article && $article->getId();
-        $location = $article ? $article->getLocation() : null;
 
         $builder
             ->add('title', TextType::class, [
@@ -49,13 +51,32 @@ class ArticleFormType extends AbstractType
             ])
         ;
 
-        if($location) {
-            $builder->add('specificLocationName', ChoiceType::class, [
-                'placeholder' => 'Where exactly?',
-                'choices' => $this->getLocationNameChoices($location),
-                'required' => false,
-            ]);
-        }
+        $builder->addEventListener(
+            FormEvents::PRE_SET_DATA,
+            function(FormEvent $event) {
+                /** @var Article|null $data */
+                $data = $event->getData();
+                if(!$data) {
+                    return;
+                }
+
+                $this->setupSpecificLocationNameField(
+                    $event->getForm(),
+                    $data->getLocation()
+                );
+            }
+        );
+
+        $builder->get('location')->addEventListener(
+            FormEvents::POST_SUBMIT,
+            function(FormEvent $event) {
+                $form = $event->getForm();
+                $this->setupSpecificLocationNameField(
+                    $form->getParent(),
+                    $event->getData()
+                );
+            }
+        );
 
         if($options['include_published_at']) {
             $builder->add('publishedAt', null, [
@@ -99,6 +120,30 @@ class ArticleFormType extends AbstractType
             'interstellar_space' => null,
         ];
         return $locationNameChoices[$location];
+    }
+
+    private function setupSpecificLocationNameField(FormInterface $form, ?string $location) {
+
+        if(null === $location) {
+            $form->remove('specificLocationName');
+
+            return;
+        }
+
+        $choices = $this->getLocationNameChoices($location);
+
+        if(null === $choices) {
+            $form->remove('specificLocationName');
+
+            return;
+        }
+
+        $form->add('specificLocationName', ChoiceType::class, [
+            'placeholder' => 'Where exactly?',
+            'choices' => $choices,
+            'required' => false
+        ]);
+
     }
 
 }
